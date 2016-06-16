@@ -1,0 +1,333 @@
+---
+title: 'Unit 6: Mid-term: Analysis of GDP and educational data'
+author: "Alex Deshowitz"
+date: "June 11, 2016"
+output: 
+    html_document:
+        keep_md: TRUE
+      
+---
+
+# Introduction
+###For this study, our goal was to compare income levels with GDP levels to see what common trends exist in the data
+###To perform the analysis, we took 2 datasets, one containing GDP by country code and the other containing educational/income information by countrycode, and combined the datasets.  We then used various visuals and functions to derive insights
+### We have included the code to clean the data so that the results are 100% reproducible
+
+# Data Tidying
+##### Please note that this code can be found in the analysis directory for this project as data_cleanup.r
+#####If you are not interested in the cleaning, please skip to the analysis section below
+
+* The first thing to do is ensure that the user has all packages loaded
+```{r load packages, echo = TRUE}
+library(plyr)
+library(RCurl)
+
+```
+
+* If you are not running this code from the locally cloned repo and using the r-project file, please ensure that the working directory is set to the root directory for this project in the location where you have saved this file using the setwd() function
+
+
+
+* Now, we will download the data by first setting the variables for the URL addresses
+
+```{r url_addresses, echo = TRUE}
+
+gdp_url<- "https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FGDP.csv"
+educational_url<-"https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FEDSTATS_Country.csv"
+
+```
+
+* Next, We use the download.file() function to download the files into the analysis/data directory
+
+```{r download files, echo= TRUE}
+download.file(gdp_url, "analysis/data/getdata-data-gdp.csv")
+download.file(educational_url, "analysis/data/getdata-data-EDSTATS_Country.csv")
+
+```
+
+* The data are now stored locally in .csv format in the data folder in the project, we need to load these into the R-environment.  We will first work with the gdp data and load the educational data after gdp is tidy.  Notice in the code, we are skipping blank lines and the first 3 lines because our initial load showed those as blank
+
+```{r load_files, echo = TRUE}
+raw_gdp<- read.csv("analysis/data/getdata-data-gdp.csv",header = TRUE, skip = 3, blank.lines.skip = TRUE) 
+
+```
+
+* After running print(raw_gdp) [not doing it here for the sake of the MD file], we see that the data essentially stops at record 232.   The only thing below that is the commentary, which we do not need, we will reread the data in without those rows
+
+```{r load_files_truncate_rows, echo = TRUE}
+
+raw_gdp<- read.csv("analysis/data/getdata-data-gdp.csv",header = TRUE, skip = 3, blank.lines.skip = TRUE, nrows = 232) 
+
+```
+
+* Now, running print() shows we are at a good starting point
+* I would like to change the column names, because these look pretty bad.  I am going to rename the columns in the dataset.
+
+```{r rename_columns, echo = TRUE}
+
+colnames(raw_gdp)
+
+names(raw_gdp) <-c("country_code","GDP_rank", "null_col","economy","GDP_US_dollars","letter_column" )
+
+colnames(raw_gdp)
+
+```
+* Alright, we have good names, but I do have that one weird blank column and several NA columns to the right of my main data that probably stored overflow text in the initial download.  I will get rid of those
+
+```{r delete_blank_columns, echo = TRUE}
+
+keepers<- c("country_code","GDP_rank","economy","GDP_US_dollars","letter_column" )
+
+raw_gdp<- raw_gdp[,keepers]
+
+colnames(raw_gdp)
+
+```
+* The column names and column wise information look good now, we can also print() or head() the data, but I will not do that to save space in the .md file- we did do this in the analysis to ensure everything looked alright
+
+* Let's see which rows have NA values.  The sapply of is.na works well for this task.
+```{r find_NAs, echo = TRUE}
+
+sapply(raw_gdp, function(x) length(which(is.na(x))))
+
+```
+* It looks like the GDP rank column has some NAs on further inspection, all of these records look like aggregations of some country groups.  For the sake of this analysis, those are not necessary and they are removed
+```{r remove_NAs, echo = TRUE}
+raw_gdp<- na.omit(raw_gdp)
+
+sapply(raw_gdp, function(x) length(which(is.na(x))))
+```
+* The NAs are now removed from the dataset and there are 190 countries remaining
+
+* One of the most important steps in analysis is assuring that the variables are of the correct class.  Otherwise, functions will not work as expected.  The code below checks for the class of the variables.
+
+```{r check_classes, echo =TRUE}
+
+sapply(raw_gdp, class)
+
+
+```
+* It appears that "GDP_US_dollars"" is a factor, I would like this to be numeric, but I noticed (after many trials) that commas are present in the factor.  Therefore, the code below removes commas and changes the variable class to numeric
+
+```{r change_classes, echo = TRUE}
+
+raw_gdp$GDP_US_dollars<- as.numeric(gsub(",","",raw_gdp$GDP_US_dollars))
+
+# check the results
+
+sapply(raw_gdp, class)
+
+```
+
+* The data looks pretty good now, at this point, if you would like to see the data, you can run summary(), view(), or str() on the data to check it out.  The markdown will not include the results of this code for the sake of space and redundancy.
+
+* Now, moving onto the raw educational data.  The code below reads in the file
+
+```{r read_educ_data, echo = TRUE}
+
+raw_educ<- read.csv("analysis/data/getdata-data-EDSTATS_Country.csv",header = TRUE)
+
+```
+
+* The code below looks for NAs in the newly imported dataset rew_educ
+
+```{r raw_educ_nas, echo = TRUE}
+
+sapply(raw_educ, function(x) length(which(is.na(x))))
+
+```
+
+* It looks like alot of observations contain NAs; however, I may not want to do the same filtering in this dataset.  When filtering tables that add dimensionality to the dataset, rows do not necessarily need to contain complete records due to analytical relevance to the question at hand.  Therefore, abscence of one variable does not negate the entire record when adding dimensionality rather than measurability to a dataset.  Additionally, this analysis is not concerned with the null variables.
+
+* Check this data hypothesis using head() and str() if necessary
+
+* Since the datasets are being merged, the column names need to be the same.  The join field in this case is "country code."  The analysis preference in this case is score based word separation rather than camelback.
+
+```{r change_names, echo = TRUE}
+colnames(raw_educ)
+
+colnames(raw_educ)[1]<- "country_code"
+
+colnames(raw_educ)
+
+```
+
+* The field is now changed for joining
+
+* Now, the data needs to be joined, and the code will check the class just to make sure that nothing changed. (this can happen).  PLEASE NOTE: The argument for all is set equal to FALSE.  An inner join is the only type of join that truly makes sense in this case, since I will be using at least one variable from the education table for every variable in the GDP table
+
+```{r merge_data, echo = TRUE}
+clean_gdp_education_data<- merge(x = raw_gdp, y = raw_educ, by = "country_code", all = FALSE)
+
+sapply(clean_gdp_education_data, class)
+
+```
+
+* For the final step, a tidy dataset is created to be used in the remainder of the analysis.  Notice, to keep the data tidy, row names are not present.
+
+```{r create_tidyset, echo = TRUE}
+write.csv(clean_gdp_education_data,"analysis/data/tidy_gdp_educ_data.csv", row.names = FALSE)
+
+```
+
+
+# Data Analysis
+##### Please note that this code can be found in the analysis directory for this project as data_analysis.r
+
+* The data_cleanup.R file contains all of the tidying procedures used to get to the analysis phase.
+* To run the code and re-create the file you must can call the source() function.
+
+* The only additional package used in this analysis is: ggplot2
+
+```{r library_analysis, echo = TRUE}
+
+library(ggplot2)
+
+```
+
+* In case, the previous code was not run in the tidying section, you need to make sure that you have a tidy file.  The source code will ensure that this occurs.  The results of source will be hidden in the MD file to keep the MD file manageable
+
+```{r source_tidy, echo = TRUE, results=('hide')}
+
+source("analysis/data_cleanup.R")
+
+```
+
+* To start fresh, clear the workspace
+
+```{r clear_workspace, echo = TRUE}
+
+ls()
+rm(list= ls())
+ls()
+```
+
+* Now read in the tidy dataset for the analysis
+
+```{r read_in_tidy, echo = TRUE}
+gdp_education_data<- read.csv("analysis/data/tidy_gdp_educ_data.csv", header = TRUE)
+
+```
+
+* Please note that the column formats are indeed intentional.  This ensures that we can identify which columns came from which original file - this is a pretty nifty trick that many (rogue) DBAs perform.
+
+### Analysis Questions
+
+**question1: How many of the IDs match?**
+
+```{r matching_cases, echo = TRUE}
+
+matching_cases<- nrow(gdp_education_data)
+matching_cases
+```
+
+* There are 189 matching cases in this dataset.  In this case due to the merge property of all=FALSE, the inner join allows a simple record count to answer the question
+
+**Question2: What is the 13th country in the dataframe when the data is sorted in ascending order by GDP dollars?**
+
+```{r question_2_13th_country, echo = TRUE}
+# first, I will order the data:
+
+gdp_education_data<- gdp_education_data[order(gdp_education_data$GDP_US_dollars),]
+
+# second, I will pull the 13th country, and make it into a variable because I like creating variables
+
+thirteenth_ranked_country <- gdp_education_data[13,]
+
+# I filtered for rank 13, but it is still a dataframe, I want a clean result, so I will just make the variable a vector
+class(thirteenth_ranked_country)
+
+as.vector(thirteenth_ranked_country$economy)
+# Alright, St. Kitts and Nevis is the 13th smallest
+
+```
+
+* St. Kitts and Nevis is the 13th smallest economy in the joined dataset
+
+
+**Question3: What are the average GDP rankings for the "high income:oecd and "high income nonOECD" groups?**
+
+```{r question_3_filtering, echo = TRUE}
+# first let me filter out the dataset
+high_income_groups<- subset(gdp_education_data,Income.Group == "High income: OECD" | Income.Group == "High income: nonOECD")
+
+#This seems right, but let me make sure that I am only pulling those 2 groups
+as.vector(unique(high_income_groups$Income.Group))
+length(as.vector(unique(high_income_groups$Income.Group)))
+# great, that looks good
+
+aggregate(high_income_groups$GDP_rank, list(high_income_groups$Income.Group),FUN = mean)
+# looks like the mean rank of High income: nonOECD  is 91.9 and the mean rank of the high income: OECD is about 33.0 (32.9 rounded)
+```
+
+* The mean rank of the High income: nonOECD group is 91.9, while the mean rank of the High income: OECD group is 33.0
+
+**Question4: Plot the gdp of all countries.  Use ggplot2 to color your plot by income group**
+
+```{r bar_chart, echo = TRUE}
+ggplot(data = gdp_education_data, aes(x = economy, y = GDP_US_dollars, fill = Income.Group )) + geom_bar(stat = "identity")
+```
+
+* It is easy to see that the U.S. has nearly twice the GDP of its next largest peer, China, in the year 2012.
+
+* This plot was a little bit more readable for me, but same takeaway
+```{r scatter_corted, echo = TRUE}
+plot(gdp_education_data$GDP_rank, gdp_education_data$GDP_US_dollars, col = gdp_education_data$Income.Group)
+
+```
+
+**Question5: Cut the GDP ranking into 5 separate quantile groups, make a table versus income group. How many countries are Lower middle income but among the 38 nations with highest GDP?**
+
+* To answer this question, multiple steps make the process seem easier.  First, we can use the sequence function learned in SWIRL to get the 5 quantiles (since each quantile is 20%, we partition by .2.
+
+```{r get_quantiles, echo= TRUE}
+
+seq(0,1,.2)
+
+```
+
+* Then place the variable into the dataset using the cut function and print the table made with the aggregate function
+
+```{r add_variable, echo = TRUE}
+
+gdp_education_data$GDP_quantile<- cut(gdp_education_data$GDP_rank, quantile(gdp_education_data$GDP_rank, probs = c(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)))
+
+quantile_table<-aggregate(gdp_education_data$GDP_rank, list(gdp_education_data$Income.Group, gdp_education_data$GDP_quantile),FUN = length)
+quantile_table
+
+```
+
+* To answer how many countries are lower-middle income, but among the nations with the highest GDP, simply subset the dataframe and count the number of rows present in the dataset
+
+```{r lowMid_with_38 rank, echo = TRUE}
+nrow(highest_GDP_lowest_income_data<- subset(gdp_education_data,Income.Group == "Lower middle income" & GDP_rank <39))
+```
+
+* There are a total of 5 nations that are Lower middle income but among the nations within the 38th highest GDP
+
+* Just to try to break the data out a little bit more, I am a little interested in the top and bottom 10
+
+```{r look at top 10, echo = TRUE}
+top_10<- subset(gdp_education_data,GDP_rank <11)
+plot(top_10$GDP_US_dollar,top_10$economy,  col = top_10$Income.Group)
+
+
+bottom_10<- subset(gdp_education_data,GDP_rank >180)
+plot(bottom_10$GDP_US_dollar,bottom_10$economy,  col = bottom_10$Income.Group)
+
+```
+
+* It is intresting that in the top 10 there is no linear trend, but most of the countries are definitely high income.  The biggest exceptions in the group are China and India.  It appears that countries with high incomes tend to create large GDP values.  WE would want to bring in some population statistics into the dataset as well since that is more than likely a variable that gets China and India into the top 10.  Lots of low incomes spread over large populations versus higher incomes spread over smaller populations.  Of course, we don't need to go very far to figure out why.  China is a huge manufacturing country known for cheap labor and the low-cost replication of other countries' products .  While India is a mecca for tech outsourcing due to low prices.
+
+* It is also very interesting that the bottom 10 GDP countries are not necessarily the lowest income.  Infact most of these countries are in the lower-middle category in leisure destinations in the Pacific
+
+# Conclusion
+
+Based on the data, we can see that in the year 2012, the United states still had the largest economy in the world.  The size of the economy was actually nearly twice that of the next largest peer.  Additionally, we found that just because a country has a lower income, does not necessarily mean that the country produces a very low GDP.  Upon further investigation, we did find that most of the countries in the top 10 by rank did have higher incomes.  However, countries such as China and India made it into the top 10 more than likely due to a mixture of their population sizes and the servce/manufacturing based economies of these countries.  When we looked at the bottom 10 countries, the hypothesis was that these countries would fall into the "low income" category.  However, we found that most of the countries were geographically located in the Pacific region and more than likely did fetch slightly higher incomes due to the destination-based economies.  Of course, we would need more information to confirm these hypotheses.  Overall, we can say that high GDP does not necessarily indicate that incomes in those countries are higher.  Of course, this data is strictly observational, so all of these inferences are observational and not causal in nature.
+
+# R session details
+
+```{r session_info, echo = TRUE}
+sessionInfo()
+```
+
